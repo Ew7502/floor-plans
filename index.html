@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Floor Plan Designer V3</title>
+    <title>My Floor Plan Designer V4</title>
     <style>
         body {
             font-family: system-ui, -apple-system, sans-serif;
@@ -24,7 +24,7 @@
             flex-wrap: wrap;
             gap: 10px;
             align-items: center;
-            width: 900px;
+            width: 950px;
             box-sizing: border-box;
         }
         .divider {
@@ -33,7 +33,7 @@
             background: #ccc;
             margin: 0 5px;
         }
-        button {
+        button, select {
             padding: 8px 14px;
             border: none;
             border-radius: 4px;
@@ -43,6 +43,12 @@
             font-weight: bold;
             transition: background 0.2s;
             font-size: 13px;
+            outline: none;
+        }
+        select {
+            border: 1px solid #ccc;
+            background-color: white;
+            cursor: pointer;
         }
         button:hover { background-color: #d0d0d0; }
         
@@ -75,18 +81,29 @@
         
         <div class="divider"></div>
         
+        <button id="btnToolFurniture" class="tool-btn">Add Furniture</button>
+        <select id="furnitureSelector">
+            <option value="bed">Bed</option>
+            <option value="sofa">Sofa</option>
+            <option value="table">Dining Table</option>
+            <option value="tub">Bathtub</option>
+        </select>
+
+        <div class="divider"></div>
+        
         <button id="btnClear" class="danger">Clear Floor</button>
     </div>
 
-    <canvas id="floorCanvas" width="900" height="700"></canvas>
+    <canvas id="floorCanvas" width="950" height="750"></canvas>
 
     <script>
         const canvas = document.getElementById('floorCanvas');
         const ctx = canvas.getContext('2d');
         
+        // Data structure updated with furniture array
         let floorPlans = {
-            floor1: { rooms: [], doors: [], windows: [], labels: [] },
-            floor2: { rooms: [], doors: [], windows: [], labels: [] }
+            floor1: { rooms: [], doors: [], windows: [], labels: [], furniture: [] },
+            floor2: { rooms: [], doors: [], windows: [], labels: [], furniture: [] }
         };
         
         let currentFloor = 'floor1';
@@ -95,14 +112,15 @@
         let startX, startY;
 
         function loadSavedPlans() {
-            const saved = localStorage.getItem('myHousePlansV3');
+            // New save file version to prevent crashing on old data
+            const saved = localStorage.getItem('myHousePlansV4');
             if (saved) {
                 floorPlans = JSON.parse(saved);
             }
         }
 
         function savePlans() {
-            localStorage.setItem('myHousePlansV3', JSON.stringify(floorPlans));
+            localStorage.setItem('myHousePlansV4', JSON.stringify(floorPlans));
         }
 
         function drawRect(item, fillColor, strokeColor, lineWidth) {
@@ -115,40 +133,87 @@
             ctx.stroke();
         }
 
-        // FIXED: Upgraded door drawing logic to prevent canvas crashes and draw better swings
         function drawDoorArc(door) {
             const w = door.w;
             const h = door.h;
-            
-            // Math.abs forces the radius to be a positive number, preventing the crash
             const radius = Math.max(Math.abs(w), Math.abs(h));
             
-            if (radius === 0) return; // Prevent drawing if there is no size
+            if (radius === 0) return;
 
             ctx.strokeStyle = '#333';
             ctx.lineWidth = 1.5;
             
-            // Draw the straight door panel
             ctx.beginPath();
             ctx.moveTo(door.x, door.y);
             ctx.lineTo(door.x + w, door.y + h);
             ctx.stroke();
             
-            // Draw the dashed arc swing
             ctx.beginPath();
             ctx.setLineDash([5, 5]); 
             
-            // Determine the correct angle for the arc based on drag direction
             let startAngle = 0;
             let endAngle = Math.PI / 2;
             
-            if (w < 0 && h > 0) { startAngle = Math.PI / 2; endAngle = Math.PI; } // Bottom-Left
-            else if (w < 0 && h < 0) { startAngle = Math.PI; endAngle = Math.PI * 1.5; } // Top-Left
-            else if (w > 0 && h < 0) { startAngle = Math.PI * 1.5; endAngle = 0; } // Top-Right
+            if (w < 0 && h > 0) { startAngle = Math.PI / 2; endAngle = Math.PI; } 
+            else if (w < 0 && h < 0) { startAngle = Math.PI; endAngle = Math.PI * 1.5; } 
+            else if (w > 0 && h < 0) { startAngle = Math.PI * 1.5; endAngle = 0; } 
 
             ctx.arc(door.x, door.y, radius, startAngle, endAngle);
             ctx.stroke();
             ctx.setLineDash([]); 
+        }
+
+        // --- NEW: Draw Furniture Function ---
+        function drawFurniture(item) {
+            const { x, y, w, h, type } = item;
+            const isWide = w > h; // Determines rotation/orientation
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#333333';
+            ctx.lineWidth = 1.5;
+
+            // Draw outer base
+            ctx.beginPath();
+            ctx.rect(x, y, w, h);
+            ctx.fill();
+            ctx.stroke();
+
+            // Draw inner details based on type
+            ctx.beginPath();
+            if (type === 'bed') {
+                if (isWide) {
+                    // Pillows on left
+                    ctx.strokeRect(x + 5, y + 5, w * 0.2, h / 2 - 10);
+                    ctx.strokeRect(x + 5, y + h / 2 + 5, w * 0.2, h / 2 - 10);
+                    // Blanket fold
+                    ctx.moveTo(x + w * 0.35, y); ctx.lineTo(x + w * 0.35, y + h); ctx.stroke();
+                } else {
+                    // Pillows on top
+                    ctx.strokeRect(x + 5, y + 5, w / 2 - 10, h * 0.2);
+                    ctx.strokeRect(x + w / 2 + 5, y + 5, w / 2 - 10, h * 0.2);
+                    // Blanket fold
+                    ctx.moveTo(x, y + h * 0.35); ctx.lineTo(x + w, y + h * 0.35); ctx.stroke();
+                }
+            } else if (type === 'sofa') {
+                if (isWide) {
+                    // Backrest (top) and armrests
+                    ctx.strokeRect(x, y, w, h * 0.3); 
+                    ctx.strokeRect(x, y, w * 0.2, h); 
+                    ctx.strokeRect(x + w * 0.8, y, w * 0.2, h); 
+                } else {
+                    // Backrest (left) and armrests
+                    ctx.strokeRect(x, y, w * 0.3, h); 
+                    ctx.strokeRect(x, y, w, h * 0.2); 
+                    ctx.strokeRect(x, y + h * 0.8, w, h * 0.2); 
+                }
+            } else if (type === 'table') {
+                // Table inset line to represent chairs/edge
+                ctx.strokeRect(x + 5, y + 5, w - 10, h - 10);
+            } else if (type === 'tub') {
+                // Oval inside the rectangle
+                ctx.ellipse(x + w/2, y + h/2, (w/2) - 5, (h/2) - 5, 0, 0, 2 * Math.PI);
+                ctx.stroke();
+            }
         }
 
         function draw() {
@@ -156,9 +221,7 @@
             const currentData = floorPlans[currentFloor];
             
             // 1. Draw Rooms 
-            currentData.rooms.forEach(room => {
-                drawRect(room, '#d3dadd', '#666666', 6);
-            });
+            currentData.rooms.forEach(room => drawRect(room, '#d3dadd', '#666666', 6));
             
             // 2. Draw Windows 
             currentData.windows.forEach(window => {
@@ -171,16 +234,17 @@
             
             // 3. Draw Doors 
             currentData.doors.forEach(door => {
-                // Clear the wall underneath safely using absolute dimensions
                 ctx.fillStyle = '#d3dadd';
                 const rectX = door.w < 0 ? door.x + door.w : door.x;
                 const rectY = door.h < 0 ? door.y + door.h : door.y;
                 ctx.fillRect(rectX, rectY, Math.abs(door.w), Math.abs(door.h));
-                
                 drawDoorArc(door);
             });
 
-            // 4. Draw Labels
+            // 4. Draw Furniture
+            currentData.furniture.forEach(item => drawFurniture(item));
+
+            // 5. Draw Labels
             ctx.fillStyle = '#000000';
             ctx.textAlign = 'center';
             currentData.labels.forEach(label => {
@@ -229,7 +293,6 @@
             
             let preview = { x: startX, y: startY, w: width, h: height };
             
-            // Normalizing width and height for drawing previews of rooms/windows
             let normalizedPreview = {
                 x: width < 0 ? currentX : startX,
                 y: height < 0 ? currentY : startY,
@@ -239,9 +302,13 @@
 
             if (currentTool === 'room') drawRect(normalizedPreview, 'rgba(211, 218, 221, 0.5)', '#666', 6);
             if (currentTool === 'window') drawRect(normalizedPreview, 'rgba(255, 255, 255, 0.8)', '#333', 1.5);
-            
-            // Doors need the raw negative/positive values to know which way to swing
             if (currentTool === 'door') drawDoorArc(preview);
+            
+            // Preview Furniture
+            if (currentTool === 'furniture') {
+                normalizedPreview.type = document.getElementById('furnitureSelector').value;
+                drawFurniture(normalizedPreview);
+            }
         });
 
         canvas.addEventListener('mouseup', (e) => {
@@ -255,27 +322,23 @@
             const height = endY - startY;
             
             if (Math.abs(width) > 5 || Math.abs(height) > 5) {
+                const normalizedItem = {
+                    x: width < 0 ? endX : startX,
+                    y: height < 0 ? endY : startY,
+                    w: Math.abs(width),
+                    h: Math.abs(height)
+                };
+
+                if (currentTool === 'room') floorPlans[currentFloor].rooms.push(normalizedItem);
+                if (currentTool === 'window') floorPlans[currentFloor].windows.push(normalizedItem);
                 
-                // Rooms and Windows save absolute bounds
-                if (currentTool === 'room' || currentTool === 'window') {
-                    const newItem = {
-                        x: width < 0 ? endX : startX,
-                        y: height < 0 ? endY : startY,
-                        w: Math.abs(width),
-                        h: Math.abs(height)
-                    };
-                    if (currentTool === 'room') floorPlans[currentFloor].rooms.push(newItem);
-                    if (currentTool === 'window') floorPlans[currentFloor].windows.push(newItem);
+                if (currentTool === 'furniture') {
+                    normalizedItem.type = document.getElementById('furnitureSelector').value;
+                    floorPlans[currentFloor].furniture.push(normalizedItem);
                 }
                 
-                // Doors save their raw directional data so they swing the right way on reload
                 if (currentTool === 'door') {
-                     floorPlans[currentFloor].doors.push({
-                         x: startX,
-                         y: startY,
-                         w: width,
-                         h: height
-                     });
+                     floorPlans[currentFloor].doors.push({ x: startX, y: startY, w: width, h: height });
                 }
                 savePlans();
             }
@@ -301,12 +364,13 @@
                 if (e.target.id === 'btnToolDoor') currentTool = 'door';
                 if (e.target.id === 'btnToolWindow') currentTool = 'window';
                 if (e.target.id === 'btnToolLabel') currentTool = 'label';
+                if (e.target.id === 'btnToolFurniture') currentTool = 'furniture';
             });
         });
 
         document.getElementById('btnClear').addEventListener('click', () => {
             if(confirm('Are you sure you want to clear this floor? This cannot be undone.')) {
-                floorPlans[currentFloor] = { rooms: [], doors: [], windows: [], labels: [] };
+                floorPlans[currentFloor] = { rooms: [], doors: [], windows: [], labels: [], furniture: [] };
                 savePlans();
                 draw();
             }
