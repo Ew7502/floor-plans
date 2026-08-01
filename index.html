@@ -21,22 +21,35 @@
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             margin-bottom: 20px;
             display: flex;
+            flex-wrap: wrap;
             gap: 10px;
             align-items: center;
+            width: 800px;
+            box-sizing: border-box;
+        }
+        .divider {
+            width: 1px;
+            height: 30px;
+            background: #ccc;
+            margin: 0 10px;
         }
         button {
             padding: 8px 16px;
             border: none;
             border-radius: 4px;
-            background-color: #0066cc;
-            color: white;
+            background-color: #e0e0e0;
+            color: #333;
             cursor: pointer;
             font-weight: bold;
             transition: background 0.2s;
         }
-        button:hover { background-color: #0052a3; }
-        button.active { background-color: #28a745; }
-        .danger { background-color: #dc3545; }
+        button:hover { background-color: #d0d0d0; }
+        
+        /* Active states for different tool categories */
+        button.active-floor { background-color: #0066cc; color: white; }
+        button.active-tool { background-color: #28a745; color: white; }
+        
+        .danger { background-color: #dc3545; color: white; }
         .danger:hover { background-color: #c82333; }
         
         canvas {
@@ -46,9 +59,7 @@
             border: 1px solid #ccc;
         }
         
-        .status { margin-left: 20px; font-weight: bold; color: #333; }
-        
-        /* Grid background for the canvas */
+        /* Grid background */
         .grid-bg {
             background-image: 
                 linear-gradient(to right, #f0f0f0 1px, transparent 1px),
@@ -60,10 +71,20 @@
 <body>
 
     <div class="toolbar">
-        <button id="btnFloor1" class="active">First Floor</button>
-        <button id="btnFloor2">Second Floor</button>
-        <button id="btnClear" class="danger">Clear Current Floor</button>
-        <span class="status" id="statusText">Editing: First Floor</span>
+        <!-- Floor Selection -->
+        <button id="btnFloor1" class="floor-btn active-floor">First Floor</button>
+        <button id="btnFloor2" class="floor-btn">Second Floor</button>
+        
+        <div class="divider"></div>
+        
+        <!-- Tool Selection -->
+        <button id="btnToolRoom" class="tool-btn active-tool">Draw Room</button>
+        <button id="btnToolDoor" class="tool-btn">Draw Door</button>
+        <button id="btnToolWindow" class="tool-btn">Draw Window</button>
+        
+        <div class="divider"></div>
+        
+        <button id="btnClear" class="danger">Clear Floor</button>
     </div>
 
     <canvas id="floorCanvas" width="800" height="600" class="grid-bg"></canvas>
@@ -72,49 +93,60 @@
         const canvas = document.getElementById('floorCanvas');
         const ctx = canvas.getContext('2d');
         
-        // Data structure to hold our drawn rooms (rectangles)
+        // Updated data structure to hold rooms, doors, and windows separately
         let floorPlans = {
-            floor1: [],
-            floor2: []
+            floor1: { rooms: [], doors: [], windows: [] },
+            floor2: { rooms: [], doors: [], windows: [] }
         };
         
         let currentFloor = 'floor1';
+        let currentTool = 'room'; // Can be 'room', 'door', or 'window'
         let isDrawing = false;
         let startX, startY;
 
-        // Load saved plans from the browser's local storage
         function loadSavedPlans() {
-            const saved = localStorage.getItem('myHousePlans');
+            // Using a new save key so we don't conflict with your old V1 data
+            const saved = localStorage.getItem('myHousePlansV2');
             if (saved) {
                 floorPlans = JSON.parse(saved);
             }
         }
 
-        // Save current plans to browser's local storage
         function savePlans() {
-            localStorage.setItem('myHousePlans', JSON.stringify(floorPlans));
+            localStorage.setItem('myHousePlansV2', JSON.stringify(floorPlans));
         }
 
-        // Draw everything on the canvas
-        function draw() {
-            // Clear the canvas completely
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // Draw all saved rooms for the current floor
-            const rooms = floorPlans[currentFloor];
-            ctx.strokeStyle = '#333';
-            ctx.lineWidth = 3;
-            ctx.fillStyle = 'rgba(0, 102, 204, 0.1)'; // Light blue fill
+        // Helper function to draw a rectangle with specific styles
+        function drawRect(item, fillColor, strokeColor, lineWidth) {
+            ctx.fillStyle = fillColor;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = lineWidth;
+            ctx.beginPath();
+            ctx.rect(item.x, item.y, item.w, item.h);
+            ctx.fill();
+            ctx.stroke();
+        }
 
-            rooms.forEach(room => {
-                ctx.beginPath();
-                ctx.rect(room.x, room.y, room.w, room.h);
-                ctx.fill();
-                ctx.stroke();
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const currentData = floorPlans[currentFloor];
+            
+            // 1. Draw Rooms (Bottom layer)
+            currentData.rooms.forEach(room => {
+                drawRect(room, 'rgba(0, 102, 204, 0.1)', '#333', 3);
+            });
+            
+            // 2. Draw Windows (Middle layer - light blue/glass)
+            currentData.windows.forEach(window => {
+                drawRect(window, 'rgba(135, 206, 235, 0.6)', '#005b9f', 2);
+            });
+            
+            // 3. Draw Doors (Top layer - brown)
+            currentData.doors.forEach(door => {
+                drawRect(door, '#8b4513', '#4a250a', 2);
             });
         }
 
-        // Handle Mouse Events
         canvas.addEventListener('mousedown', (e) => {
             isDrawing = true;
             const rect = canvas.getBoundingClientRect();
@@ -128,20 +160,16 @@
             const rect = canvas.getBoundingClientRect();
             const currentX = e.clientX - rect.left;
             const currentY = e.clientY - rect.top;
-            
             const width = currentX - startX;
             const height = currentY - startY;
 
-            draw(); // Redraw existing rooms
+            draw(); 
             
-            // Draw the temporary room being dragged
-            ctx.strokeStyle = '#0066cc';
-            ctx.lineWidth = 3;
-            ctx.fillStyle = 'rgba(0, 102, 204, 0.3)';
-            ctx.beginPath();
-            ctx.rect(startX, startY, width, height);
-            ctx.fill();
-            ctx.stroke();
+            // Draw temporary preview based on the selected tool
+            let preview = { x: startX, y: startY, w: width, h: height };
+            if (currentTool === 'room') drawRect(preview, 'rgba(0, 102, 204, 0.3)', '#0066cc', 3);
+            if (currentTool === 'window') drawRect(preview, 'rgba(135, 206, 235, 0.8)', '#005b9f', 2);
+            if (currentTool === 'door') drawRect(preview, 'rgba(139, 69, 19, 0.8)', '#4a250a', 2);
         });
 
         canvas.addEventListener('mouseup', (e) => {
@@ -151,51 +179,60 @@
             const rect = canvas.getBoundingClientRect();
             const endX = e.clientX - rect.left;
             const endY = e.clientY - rect.top;
-            
             const width = endX - startX;
             const height = endY - startY;
             
-            // Only save if the room is big enough (prevents accidental clicks)
-            if (Math.abs(width) > 10 && Math.abs(height) > 10) {
-                // Normalize negative widths/heights if drawn backwards
-                const room = {
+            if (Math.abs(width) > 5 && Math.abs(height) > 5) {
+                const newItem = {
                     x: width < 0 ? endX : startX,
                     y: height < 0 ? endY : startY,
                     w: Math.abs(width),
                     h: Math.abs(height)
                 };
-                floorPlans[currentFloor].push(room);
+                
+                // Push the new item into the correct array based on the tool
+                if (currentTool === 'room') floorPlans[currentFloor].rooms.push(newItem);
+                if (currentTool === 'window') floorPlans[currentFloor].windows.push(newItem);
+                if (currentTool === 'door') floorPlans[currentFloor].doors.push(newItem);
+                
                 savePlans();
             }
             draw();
         });
 
-        // UI Controls
-        document.getElementById('btnFloor1').addEventListener('click', (e) => {
-            currentFloor = 'floor1';
-            document.getElementById('statusText').innerText = 'Editing: First Floor';
-            document.getElementById('btnFloor1').classList.add('active');
-            document.getElementById('btnFloor2').classList.remove('active');
-            draw();
+        // --- UI Events ---
+        
+        // Floor Buttons
+        document.querySelectorAll('.floor-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.floor-btn').forEach(b => b.classList.remove('active-floor'));
+                e.target.classList.add('active-floor');
+                currentFloor = e.target.id === 'btnFloor1' ? 'floor1' : 'floor2';
+                draw();
+            });
         });
 
-        document.getElementById('btnFloor2').addEventListener('click', (e) => {
-            currentFloor = 'floor2';
-            document.getElementById('statusText').innerText = 'Editing: Second Floor';
-            document.getElementById('btnFloor2').classList.add('active');
-            document.getElementById('btnFloor1').classList.remove('active');
-            draw();
+        // Tool Buttons
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active-tool'));
+                e.target.classList.add('active-tool');
+                
+                if (e.target.id === 'btnToolRoom') currentTool = 'room';
+                if (e.target.id === 'btnToolDoor') currentTool = 'door';
+                if (e.target.id === 'btnToolWindow') currentTool = 'window';
+            });
         });
 
         document.getElementById('btnClear').addEventListener('click', () => {
             if(confirm('Are you sure you want to clear this floor? This cannot be undone.')) {
-                floorPlans[currentFloor] = []; // Empty the array
+                floorPlans[currentFloor] = { rooms: [], doors: [], windows: [] };
                 savePlans();
                 draw();
             }
         });
 
-        // Initialize the app
+        // Initialize
         loadSavedPlans();
         draw();
     </script>
