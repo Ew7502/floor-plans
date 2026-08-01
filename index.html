@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Floor Plan Designer</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .toolbar {
+            background: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            background-color: #0066cc;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #0052a3; }
+        button.active { background-color: #28a745; }
+        .danger { background-color: #dc3545; }
+        .danger:hover { background-color: #c82333; }
+        
+        canvas {
+            background: white;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            cursor: crosshair;
+            border: 1px solid #ccc;
+        }
+        
+        .status { margin-left: 20px; font-weight: bold; color: #333; }
+        
+        /* Grid background for the canvas */
+        .grid-bg {
+            background-image: 
+                linear-gradient(to right, #f0f0f0 1px, transparent 1px),
+                linear-gradient(to bottom, #f0f0f0 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <button id="btnFloor1" class="active">First Floor</button>
+        <button id="btnFloor2">Second Floor</button>
+        <button id="btnClear" class="danger">Clear Current Floor</button>
+        <span class="status" id="statusText">Editing: First Floor</span>
+    </div>
+
+    <canvas id="floorCanvas" width="800" height="600" class="grid-bg"></canvas>
+
+    <script>
+        const canvas = document.getElementById('floorCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Data structure to hold our drawn rooms (rectangles)
+        let floorPlans = {
+            floor1: [],
+            floor2: []
+        };
+        
+        let currentFloor = 'floor1';
+        let isDrawing = false;
+        let startX, startY;
+
+        // Load saved plans from the browser's local storage
+        function loadSavedPlans() {
+            const saved = localStorage.getItem('myHousePlans');
+            if (saved) {
+                floorPlans = JSON.parse(saved);
+            }
+        }
+
+        // Save current plans to browser's local storage
+        function savePlans() {
+            localStorage.setItem('myHousePlans', JSON.stringify(floorPlans));
+        }
+
+        // Draw everything on the canvas
+        function draw() {
+            // Clear the canvas completely
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw all saved rooms for the current floor
+            const rooms = floorPlans[currentFloor];
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 3;
+            ctx.fillStyle = 'rgba(0, 102, 204, 0.1)'; // Light blue fill
+
+            rooms.forEach(room => {
+                ctx.beginPath();
+                ctx.rect(room.x, room.y, room.w, room.h);
+                ctx.fill();
+                ctx.stroke();
+            });
+        }
+
+        // Handle Mouse Events
+        canvas.addEventListener('mousedown', (e) => {
+            isDrawing = true;
+            const rect = canvas.getBoundingClientRect();
+            startX = e.clientX - rect.left;
+            startY = e.clientY - rect.top;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+            
+            const width = currentX - startX;
+            const height = currentY - startY;
+
+            draw(); // Redraw existing rooms
+            
+            // Draw the temporary room being dragged
+            ctx.strokeStyle = '#0066cc';
+            ctx.lineWidth = 3;
+            ctx.fillStyle = 'rgba(0, 102, 204, 0.3)';
+            ctx.beginPath();
+            ctx.rect(startX, startY, width, height);
+            ctx.fill();
+            ctx.stroke();
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            const rect = canvas.getBoundingClientRect();
+            const endX = e.clientX - rect.left;
+            const endY = e.clientY - rect.top;
+            
+            const width = endX - startX;
+            const height = endY - startY;
+            
+            // Only save if the room is big enough (prevents accidental clicks)
+            if (Math.abs(width) > 10 && Math.abs(height) > 10) {
+                // Normalize negative widths/heights if drawn backwards
+                const room = {
+                    x: width < 0 ? endX : startX,
+                    y: height < 0 ? endY : startY,
+                    w: Math.abs(width),
+                    h: Math.abs(height)
+                };
+                floorPlans[currentFloor].push(room);
+                savePlans();
+            }
+            draw();
+        });
+
+        // UI Controls
+        document.getElementById('btnFloor1').addEventListener('click', (e) => {
+            currentFloor = 'floor1';
+            document.getElementById('statusText').innerText = 'Editing: First Floor';
+            document.getElementById('btnFloor1').classList.add('active');
+            document.getElementById('btnFloor2').classList.remove('active');
+            draw();
+        });
+
+        document.getElementById('btnFloor2').addEventListener('click', (e) => {
+            currentFloor = 'floor2';
+            document.getElementById('statusText').innerText = 'Editing: Second Floor';
+            document.getElementById('btnFloor2').classList.add('active');
+            document.getElementById('btnFloor1').classList.remove('active');
+            draw();
+        });
+
+        document.getElementById('btnClear').addEventListener('click', () => {
+            if(confirm('Are you sure you want to clear this floor? This cannot be undone.')) {
+                floorPlans[currentFloor] = []; // Empty the array
+                savePlans();
+                draw();
+            }
+        });
+
+        // Initialize the app
+        loadSavedPlans();
+        draw();
+    </script>
+</body>
+</html>
