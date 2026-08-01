@@ -84,7 +84,6 @@
         const canvas = document.getElementById('floorCanvas');
         const ctx = canvas.getContext('2d');
         
-        // Added 'labels' array to our data structure
         let floorPlans = {
             floor1: { rooms: [], doors: [], windows: [], labels: [] },
             floor2: { rooms: [], doors: [], windows: [], labels: [] }
@@ -116,49 +115,68 @@
             ctx.stroke();
         }
 
-        // Draw an architectural door symbol (arc)
+        // FIXED: Upgraded door drawing logic to prevent canvas crashes and draw better swings
         function drawDoorArc(door) {
+            const w = door.w;
+            const h = door.h;
+            
+            // Math.abs forces the radius to be a positive number, preventing the crash
+            const radius = Math.max(Math.abs(w), Math.abs(h));
+            
+            if (radius === 0) return; // Prevent drawing if there is no size
+
             ctx.strokeStyle = '#333';
             ctx.lineWidth = 1.5;
+            
+            // Draw the straight door panel
             ctx.beginPath();
-            // Draw the straight door part
             ctx.moveTo(door.x, door.y);
-            ctx.lineTo(door.x + door.w, door.y + door.h);
+            ctx.lineTo(door.x + w, door.y + h);
             ctx.stroke();
             
-            // Draw the arc swing (simplified)
+            // Draw the dashed arc swing
             ctx.beginPath();
-            ctx.setLineDash([5, 5]); // dashed line for swing
-            const radius = Math.max(door.w, door.h);
-            ctx.arc(door.x, door.y, radius, 0, Math.PI / 2);
+            ctx.setLineDash([5, 5]); 
+            
+            // Determine the correct angle for the arc based on drag direction
+            let startAngle = 0;
+            let endAngle = Math.PI / 2;
+            
+            if (w < 0 && h > 0) { startAngle = Math.PI / 2; endAngle = Math.PI; } // Bottom-Left
+            else if (w < 0 && h < 0) { startAngle = Math.PI; endAngle = Math.PI * 1.5; } // Top-Left
+            else if (w > 0 && h < 0) { startAngle = Math.PI * 1.5; endAngle = 0; } // Top-Right
+
+            ctx.arc(door.x, door.y, radius, startAngle, endAngle);
             ctx.stroke();
-            ctx.setLineDash([]); // reset dashes
+            ctx.setLineDash([]); 
         }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             const currentData = floorPlans[currentFloor];
             
-            // 1. Draw Rooms (Styled to match the reference image: light grey/blue with thick dark grey walls)
+            // 1. Draw Rooms 
             currentData.rooms.forEach(room => {
                 drawRect(room, '#d3dadd', '#666666', 6);
             });
             
-            // 2. Draw Windows (White blocks over walls to break them up)
+            // 2. Draw Windows 
             currentData.windows.forEach(window => {
                 drawRect(window, '#ffffff', '#333333', 1.5);
-                // Draw inner window pane line
                 ctx.beginPath();
                 ctx.moveTo(window.x, window.y + window.h/2);
                 ctx.lineTo(window.x + window.w, window.y + window.h/2);
                 ctx.stroke();
             });
             
-            // 3. Draw Doors (Using our new arc function)
+            // 3. Draw Doors 
             currentData.doors.forEach(door => {
-                // Clear the wall underneath
+                // Clear the wall underneath safely using absolute dimensions
                 ctx.fillStyle = '#d3dadd';
-                ctx.fillRect(door.x, door.y, door.w, door.h);
+                const rectX = door.w < 0 ? door.x + door.w : door.x;
+                const rectY = door.h < 0 ? door.y + door.h : door.y;
+                ctx.fillRect(rectX, rectY, Math.abs(door.w), Math.abs(door.h));
+                
                 drawDoorArc(door);
             });
 
@@ -193,9 +211,8 @@
                     savePlans();
                     draw();
                 }
-                return; // Don't trigger drawing logic
+                return; 
             }
-
             isDrawing = true;
         });
 
@@ -211,8 +228,19 @@
             draw(); 
             
             let preview = { x: startX, y: startY, w: width, h: height };
-            if (currentTool === 'room') drawRect(preview, 'rgba(211, 218, 221, 0.5)', '#666', 6);
-            if (currentTool === 'window') drawRect(preview, 'rgba(255, 255, 255, 0.8)', '#333', 1.5);
+            
+            // Normalizing width and height for drawing previews of rooms/windows
+            let normalizedPreview = {
+                x: width < 0 ? currentX : startX,
+                y: height < 0 ? currentY : startY,
+                w: Math.abs(width),
+                h: Math.abs(height)
+            };
+
+            if (currentTool === 'room') drawRect(normalizedPreview, 'rgba(211, 218, 221, 0.5)', '#666', 6);
+            if (currentTool === 'window') drawRect(normalizedPreview, 'rgba(255, 255, 255, 0.8)', '#333', 1.5);
+            
+            // Doors need the raw negative/positive values to know which way to swing
             if (currentTool === 'door') drawDoorArc(preview);
         });
 
@@ -226,18 +254,29 @@
             const width = endX - startX;
             const height = endY - startY;
             
-            if (Math.abs(width) > 5 && Math.abs(height) > 5) {
-                const newItem = {
-                    x: width < 0 ? endX : startX,
-                    y: height < 0 ? endY : startY,
-                    w: Math.abs(width),
-                    h: Math.abs(height)
-                };
+            if (Math.abs(width) > 5 || Math.abs(height) > 5) {
                 
-                if (currentTool === 'room') floorPlans[currentFloor].rooms.push(newItem);
-                if (currentTool === 'window') floorPlans[currentFloor].windows.push(newItem);
-                if (currentTool === 'door') floorPlans[currentFloor].doors.push(newItem);
+                // Rooms and Windows save absolute bounds
+                if (currentTool === 'room' || currentTool === 'window') {
+                    const newItem = {
+                        x: width < 0 ? endX : startX,
+                        y: height < 0 ? endY : startY,
+                        w: Math.abs(width),
+                        h: Math.abs(height)
+                    };
+                    if (currentTool === 'room') floorPlans[currentFloor].rooms.push(newItem);
+                    if (currentTool === 'window') floorPlans[currentFloor].windows.push(newItem);
+                }
                 
+                // Doors save their raw directional data so they swing the right way on reload
+                if (currentTool === 'door') {
+                     floorPlans[currentFloor].doors.push({
+                         x: startX,
+                         y: startY,
+                         w: width,
+                         h: height
+                     });
+                }
                 savePlans();
             }
             draw();
@@ -273,6 +312,7 @@
             }
         });
 
+        // Boot up
         loadSavedPlans();
         draw();
     </script>
